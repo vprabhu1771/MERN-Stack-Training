@@ -248,6 +248,7 @@ Once the route is working, your `categoryRoutes.js` can become:
 
 ```javascript
 const express = require("express");
+const mongoose = require("mongoose");
 const Category = require("../models/Category");
 
 const router = express.Router();
@@ -255,9 +256,9 @@ const router = express.Router();
 // GET all categories
 router.get("/", async (req, res) => {
   try {
-    const categories = await Category.find().sort({ id: 1 });
+    const categories = await Category.find().sort({ createdAt: -1 });
 
-    res.json(categories);
+    res.status(200).json(categories);
   } catch (error) {
     res.status(500).json({
       message: "Failed to fetch categories",
@@ -269,9 +270,15 @@ router.get("/", async (req, res) => {
 // GET single category
 router.get("/:id", async (req, res) => {
   try {
-    const category = await Category.findOne({
-      id: Number(req.params.id)
-    });
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        message: "Invalid category ID"
+      });
+    }
+
+    const category = await Category.findById(id);
 
     if (!category) {
       return res.status(404).json({
@@ -279,7 +286,7 @@ router.get("/:id", async (req, res) => {
       });
     }
 
-    res.json(category);
+    res.status(200).json(category);
   } catch (error) {
     res.status(500).json({
       message: "Failed to fetch category",
@@ -291,31 +298,32 @@ router.get("/:id", async (req, res) => {
 // CREATE category
 router.post("/", async (req, res) => {
   try {
-    const { id, name } = req.body;
+    const { name } = req.body;
 
-    if (!id || !name) {
+    if (!name || !name.trim()) {
       return res.status(400).json({
-        message: "ID and name are required"
+        message: "Category name is required"
       });
     }
 
     const existing = await Category.findOne({
-      id: Number(id)
+      name: name.trim()
     });
 
     if (existing) {
-      return res.status(400).json({
-        message: "Category ID already exists"
+      return res.status(409).json({
+        message: "Category already exists"
       });
     }
 
     const category = await Category.create({
-      id: Number(id),
       name: name.trim()
     });
 
-    res.status(201).json(category);
-
+    res.status(201).json({
+      message: "Category created successfully",
+      category
+    });
   } catch (error) {
     res.status(500).json({
       message: "Failed to create category",
@@ -327,17 +335,40 @@ router.post("/", async (req, res) => {
 // UPDATE category
 router.put("/:id", async (req, res) => {
   try {
+    const { id } = req.params;
     const { name } = req.body;
 
-    const category = await Category.findOneAndUpdate(
-      {
-        id: Number(req.params.id)
-      },
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        message: "Invalid category ID"
+      });
+    }
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({
+        message: "Category name is required"
+      });
+    }
+
+    const existing = await Category.findOne({
+      name: name.trim(),
+      _id: { $ne: id }
+    });
+
+    if (existing) {
+      return res.status(409).json({
+        message: "Category name already exists"
+      });
+    }
+
+    const category = await Category.findByIdAndUpdate(
+      id,
       {
         name: name.trim()
       },
       {
-        new: true
+        new: true,
+        runValidators: true
       }
     );
 
@@ -347,8 +378,10 @@ router.put("/:id", async (req, res) => {
       });
     }
 
-    res.json(category);
-
+    res.status(200).json({
+      message: "Category updated successfully",
+      category
+    });
   } catch (error) {
     res.status(500).json({
       message: "Failed to update category",
@@ -360,9 +393,15 @@ router.put("/:id", async (req, res) => {
 // DELETE category
 router.delete("/:id", async (req, res) => {
   try {
-    const category = await Category.findOneAndDelete({
-      id: Number(req.params.id)
-    });
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        message: "Invalid category ID"
+      });
+    }
+
+    const category = await Category.findByIdAndDelete(id);
 
     if (!category) {
       return res.status(404).json({
@@ -370,10 +409,9 @@ router.delete("/:id", async (req, res) => {
       });
     }
 
-    res.json({
+    res.status(200).json({
       message: "Category deleted successfully"
     });
-
   } catch (error) {
     res.status(500).json({
       message: "Failed to delete category",
@@ -391,13 +429,7 @@ And `models/Category.js`:
 const mongoose = require("mongoose");
 
 const categorySchema = new mongoose.Schema(
-  {
-    id: {
-      type: Number,
-      required: true,
-      unique: true
-    },
-
+  {    
     name: {
       type: String,
       required: true,
@@ -425,214 +457,6 @@ models/Category.js
     ↓
 MongoDB
 ```
-
-This is the proper structure before connecting your **Vite + MUI + SweetAlert2** frontend.
-
-
-### Category page
-
-```jsx
-import { useEffect, useState } from "react";
-import Swal from "sweetalert2";
-
-import {
-  getCategories,
-  createCategory,
-  updateCategory,
-  deleteCategory
-} from "../services/categoryService";
-
-function Categories() {
-  const [categories, setCategories] = useState([]);
-  const [id, setId] = useState("");
-  const [name, setName] = useState("");
-  const [editing, setEditing] = useState(false);
-
-  const loadCategories = async () => {
-    try {
-      const response = await getCategories();
-      setCategories(response.data);
-    } catch (error) {
-      Swal.fire("Error", "Unable to load categories", "error");
-    }
-  };
-
-  useEffect(() => {
-    loadCategories();
-  }, []);
-
-  const saveCategory = async (e) => {
-    e.preventDefault();
-
-    if (!id || !name.trim()) {
-      Swal.fire("Warning", "ID and Name are required", "warning");
-      return;
-    }
-
-    try {
-      if (editing) {
-        await updateCategory(id, {
-          id: Number(id),
-          name: name.trim()
-        });
-
-        Swal.fire("Updated!", "Category updated successfully", "success");
-      } else {
-        await createCategory({
-          id: Number(id),
-          name: name.trim()
-        });
-
-        Swal.fire("Created!", "Category created successfully", "success");
-      }
-
-      resetForm();
-      loadCategories();
-
-    } catch (error) {
-      Swal.fire(
-        "Error",
-        error.response?.data?.message || "Operation failed",
-        "error"
-      );
-    }
-  };
-
-  const editCategory = (category) => {
-    setId(category.id);
-    setName(category.name);
-    setEditing(true);
-  };
-
-  const removeCategory = async (categoryId) => {
-    const result = await Swal.fire({
-      title: "Are you sure?",
-      text: "This category will be deleted.",
-      icon: "warning",
-      showCancelButton: true,
-      confirmButtonText: "Yes, delete it!",
-      cancelButtonText: "Cancel"
-    });
-
-    if (!result.isConfirmed) {
-      return;
-    }
-
-    try {
-      await deleteCategory(categoryId);
-
-      Swal.fire(
-        "Deleted!",
-        "Category deleted successfully.",
-        "success"
-      );
-
-      loadCategories();
-
-    } catch (error) {
-      Swal.fire("Error", "Unable to delete category", "error");
-    }
-  };
-
-  const resetForm = () => {
-    setId("");
-    setName("");
-    setEditing(false);
-  };
-
-  return (
-    <div className="container mt-4">
-
-      <h2>Category Management</h2>
-
-      <form onSubmit={saveCategory}>
-
-        <div>
-          <label>ID</label>
-
-          <input
-            type="number"
-            value={id}
-            onChange={(e) => setId(e.target.value)}
-            disabled={editing}
-          />
-        </div>
-
-        <div>
-          <label>Name</label>
-
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Category name"
-          />
-        </div>
-
-        <button type="submit">
-          {editing ? "Update" : "Save"}
-        </button>
-
-        {editing && (
-          <button
-            type="button"
-            onClick={resetForm}
-          >
-            Cancel
-          </button>
-        )}
-
-      </form>
-
-      <hr />
-
-      <table>
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Name</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-
-        <tbody>
-          {categories.map((category) => (
-            <tr key={category.id}>
-
-              <td>{category.id}</td>
-
-              <td>{category.name}</td>
-
-              <td>
-                <button
-                  onClick={() => editCategory(category)}
-                >
-                  Edit
-                </button>
-
-                <button
-                  onClick={() => removeCategory(category.id)}
-                >
-                  Delete
-                </button>
-              </td>
-
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-    </div>
-  );
-}
-
-export default Categories;
-```
-
----
-
-
-
 
 Replace `192.168.1.100` with the IP address of your Node.js computer when testing on a physical phone.
 

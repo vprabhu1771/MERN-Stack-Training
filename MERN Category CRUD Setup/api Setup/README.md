@@ -12,7 +12,7 @@ Yes. You can build a **Category CRUD system** using:
                  ┌──────────────────────┐
                  │      MongoDB         │
                  │ categories           │
-                 │ _id, id, name        │
+                 │ _id, name            │
                  └──────────▲───────────┘
                             │
                      REST API / JSON
@@ -37,8 +37,7 @@ I recommend keeping MongoDB's `_id` and your own numeric `id` separate:
 
 ```json
 {
-  "_id": "68f123...",
-  "id": 1,
+  "_id": "68f123...",  
   "name": "Electronics"
 }
 ```
@@ -77,8 +76,8 @@ category-api/
 ### Install
 
 ```bash
-mkdir category-api
-cd category-api
+mkdir api
+cd api
 
 npm init -y
 
